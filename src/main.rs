@@ -1,3 +1,4 @@
+use clap::{Command, Arg};
 use serde::{ de::DeserializeOwned};
 use serde_derive::Deserialize;
 use std::error::Error;
@@ -14,8 +15,25 @@ pub struct Fileinfo {
     pub(crate) file_paths: Vec<PathBuf>,
 }
 
+static DDH_MOVE_RS_ABOUT: &str = "Read DDH JSON files and do something with the data contained in them.";
+
 fn main(){
-    let files: Vec<Fileinfo> = read_object("../backup-photos-dupes.json").unwrap();
+    let arguments = Command::new("Directory Difference hTool File Mover / Remover")
+                        .version(env!("CARGO_PKG_VERSION"))
+                        .author(env!("CARGO_PKG_AUTHORS"))
+                        .about(DDH_MOVE_RS_ABOUT)
+                        .arg(Arg::new("input")
+                                .short('i')
+                                .long("input")
+                                .value_name("Input")
+                                .help("Input JSON file")
+                                .max_values(1)
+                                .required(true)
+                                .takes_value(true))
+                        .get_matches();
+
+    let input: Vec<_> = arguments.values_of("input").unwrap().collect();
+    let files: Vec<Fileinfo> = read_object(input[0]).unwrap();
 
     for file in files.iter() {
         match file {
@@ -23,7 +41,6 @@ fn main(){
             _ => {}
         }
     }
-    //println!("{0:?}", b[0]);
 }
 
 
