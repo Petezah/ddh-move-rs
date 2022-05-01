@@ -1,7 +1,9 @@
 [package]
 name = "ddh-move-rs"
 version = "0.1.0"
+authors = ["Peter Dunshee <peter@petezah.com>"]
 edition = "2021"
+description = "Read DDH JSON files and act on the data"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
