@@ -1,0 +1,8 @@
+[
+    {
+        "file_paths":["path1/foo","path2/bar"]
+    },
+    {
+        "file_paths":["bas"]
+    }
+]
