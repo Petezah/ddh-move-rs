@@ -25,18 +25,19 @@ fn main(){
 
     //type PathPred<'a> = fn(&'a &&PathBuf) -> bool; // |p: PathBuf|: 'a -> bool;
     // type PathPred = impl FnMut(&&PathBuf) -> bool;
-    let keep_filter = match arguments.subcommand(){
+    //let keep_filter = move |paths: &Vec<PathBuf>| match arguments.subcommand(){
+    let keep_filter = move |paths: &Vec<PathBuf>| match arguments.subcommand(){
         Some(("useprefix", sub_matches)) => {
-            println!(
-                "Using prefix {}",
-                sub_matches.value_of("PATHPREFIX").expect("required")
-            );
-            create_predicate(1)
+            let pathprefix = sub_matches.value_of("PATHPREFIX").expect("required");
+            let result: Vec<_> = paths.iter().filter(|x| x.starts_with(pathprefix)).collect();
+            result
         }
-        Some(("prefershort", _)) => { create_predicate(2) }
-        Some(("preferlong", _)) => { create_predicate(3) }
-        Some(("preferfirstsorted", _)) => { create_predicate(4) }
-        None => { create_predicate(5) }
+        Some(("prefershort", _)) => { 
+            paths.sort_by(|a, b| b.cmp(a));
+         }
+        Some(("preferlong", _)) => { true }
+        Some(("preferfirstsorted", _)) => { true }
+        None => { true }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
     };
 
@@ -46,13 +47,6 @@ fn main(){
         //let paths: Vec<_> = file.file_paths.iter().filter(keep_filter).collect();
         let paths = keep_filter(&file.file_paths);
         println!("{0:?}", paths);
-    }
-}
-
-fn create_predicate(n: usize) -> impl Fn (&Vec<PathBuf>) -> bool {
-    move |paths: &Vec<PathBuf>| {
-        println!("{0:?} {1}", paths, n);
-        return true;
     }
 }
 
