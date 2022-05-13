@@ -6,6 +6,7 @@ use std::io::{BufReader};
 use std::{ fmt::Debug};
 use std::{fs::File};
 use std::path::PathBuf;
+use std::cmp::Ordering;
 
 /// Serializable struct containing entries for a specific file. These structs will identify individual files as a collection of paths and associated hash and length data.
 #[derive(Debug, Deserialize)]
@@ -23,56 +24,66 @@ fn main(){
     let input: Vec<_> = arguments.values_of("input").unwrap().collect();
     let mut dupe_files = get_dupe_files(input[0]).unwrap();
 
-    //type PathPred<'a> = fn(&'a &&PathBuf) -> bool; // |p: PathBuf|: 'a -> bool;
-    // type PathPred = impl FnMut(&&PathBuf) -> bool;
-    //let keep_filter = move |paths: &Vec<PathBuf>| match arguments.subcommand(){
-    let keep_filter = move |paths: &mut Vec<PathBuf>| match arguments.subcommand(){
+    match arguments.subcommand(){
         Some(("useprefix", sub_matches)) => {
             let pathprefix = sub_matches.value_of("PATHPREFIX").expect("required");
-            paths.sort_by(|a, b| {
-                if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
-                    b.cmp(a)
-                } else if a.starts_with(pathprefix){
-                    b.cmp(a)
-                } else if b.starts_with(pathprefix){
-                    b.cmp(a)
-                } else {
-                    b.cmp(a)
-                }
-            });
-            let result: Vec<_> = paths.iter().skip(1).collect();
-            result
+            keep_prefixed_file(pathprefix, &mut dupe_files);
         }
         Some(("prefershort", _)) => { 
-            paths.sort_by(|a, b| a.to_str().unwrap().len().cmp(&b.to_str().unwrap().len()));
-            let result: Vec<_> = paths.iter().skip(1).collect();
-            result
+            keep_prefixed_file("", &mut dupe_files);
+            // paths.sort_by(|a, b| a.to_str().unwrap().len().cmp(&b.to_str().unwrap().len()));
+            // let result: Vec<_> = paths.iter().skip(1).collect();
+            // result
          }
         Some(("preferlong", _)) => { 
-            paths.sort_by(|a, b| b.to_str().unwrap().len().cmp(&a.to_str().unwrap().len()));
-            let result: Vec<_> = paths.iter().skip(1).collect();
-            result
+            keep_prefixed_file("", &mut dupe_files);
+            // paths.sort_by(|a, b| b.to_str().unwrap().len().cmp(&a.to_str().unwrap().len()));
+            // let result: Vec<_> = paths.iter().skip(1).collect();
+            // result
          }
         Some(("preferfirstsorted", _))  => { 
-            paths.sort_by(|a, b| b.cmp(a));
-            let result: Vec<_> = paths.iter().skip(1).collect();
-            result
+            keep_prefixed_file("", &mut dupe_files);
+            // paths.sort_by(|a, b| b.cmp(a));
+            // let result: Vec<_> = paths.iter().skip(1).collect();
+            // result
         }
         None => { 
-            paths.sort_by(|a, b| b.cmp(a));
-            let result: Vec<_> = paths.iter().skip(0).collect();
-            result
+            keep_prefixed_file("", &mut dupe_files);
+            // paths.sort_by(|a, b| b.cmp(a));
+            // let result: Vec<_> = paths.iter().skip(0).collect();
+            // result
         }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
     };
 
-    //let z: Vec<_> = dupe_files[0].file_paths.iter().filter(|x| true ).collect();
+    // for file in dupe_files.iter_mut() {
+    //     //let paths: Vec<_> = file.file_paths.iter().filter(keep_filter).collect();
+    //     let paths = keep_filter(&mut file.file_paths);
+    //     println!("{0:?}", paths);
+    // }
+}
 
+fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>) {
     for file in dupe_files.iter_mut() {
-        //let paths: Vec<_> = file.file_paths.iter().filter(keep_filter).collect();
-        let paths = keep_filter(&mut file.file_paths);
-        println!("{0:?}", paths);
+        file.file_paths.sort_by(|a, b| {
+            if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
+                println!("{0:?} {1:?} 1", a, b);
+                a.cmp(b)
+            } else if a.starts_with(pathprefix){
+                println!("{0:?} {1:?} 2", a, b);
+                Ordering::Less
+            } else if b.starts_with(pathprefix){
+                println!("{0:?} {1:?} 3", a, b);
+                Ordering::Greater
+            } else {
+                println!("{0:?} {1:?} 4", a, b);
+                a.cmp(b)
+            }
+        });
+        println!("{0:?}", file.file_paths);
     }
+    //let result: Vec<_> = paths.iter().skip(1).collect();
+    //result
 }
 
 fn cli() -> Command<'static> {

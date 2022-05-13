@@ -1,8 +1,8 @@
 [
     {
-        "file_paths":["path1/foo","path2/bar"]
+        "file_paths":["path1/foo","path2/bar","path2/blabla", "path1/fooby", "path3/zxcv"]
     },
     {
-        "file_paths":["bas"]
+        "file_paths":["path1/asdf", "path2/hjkl"]
     }
 ]
