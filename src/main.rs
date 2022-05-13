@@ -21,31 +21,56 @@ fn main(){
     let arguments = cli().get_matches();
 
     let input: Vec<_> = arguments.values_of("input").unwrap().collect();
-    let dupe_files = get_dupe_files(input[0]).unwrap();
+    let mut dupe_files = get_dupe_files(input[0]).unwrap();
 
     //type PathPred<'a> = fn(&'a &&PathBuf) -> bool; // |p: PathBuf|: 'a -> bool;
     // type PathPred = impl FnMut(&&PathBuf) -> bool;
     //let keep_filter = move |paths: &Vec<PathBuf>| match arguments.subcommand(){
-    let keep_filter = move |paths: &Vec<PathBuf>| match arguments.subcommand(){
+    let keep_filter = move |paths: &mut Vec<PathBuf>| match arguments.subcommand(){
         Some(("useprefix", sub_matches)) => {
             let pathprefix = sub_matches.value_of("PATHPREFIX").expect("required");
-            let result: Vec<_> = paths.iter().filter(|x| x.starts_with(pathprefix)).collect();
+            paths.sort_by(|a, b| {
+                if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
+                    b.cmp(a)
+                } else if a.starts_with(pathprefix){
+                    b.cmp(a)
+                } else if b.starts_with(pathprefix){
+                    b.cmp(a)
+                } else {
+                    b.cmp(a)
+                }
+            });
+            let result: Vec<_> = paths.iter().skip(1).collect();
             result
         }
         Some(("prefershort", _)) => { 
-            paths.sort_by(|a, b| b.cmp(a));
+            paths.sort_by(|a, b| a.to_str().unwrap().len().cmp(&b.to_str().unwrap().len()));
+            let result: Vec<_> = paths.iter().skip(1).collect();
+            result
          }
-        Some(("preferlong", _)) => { true }
-        Some(("preferfirstsorted", _)) => { true }
-        None => { true }
+        Some(("preferlong", _)) => { 
+            paths.sort_by(|a, b| b.to_str().unwrap().len().cmp(&a.to_str().unwrap().len()));
+            let result: Vec<_> = paths.iter().skip(1).collect();
+            result
+         }
+        Some(("preferfirstsorted", _))  => { 
+            paths.sort_by(|a, b| b.cmp(a));
+            let result: Vec<_> = paths.iter().skip(1).collect();
+            result
+        }
+        None => { 
+            paths.sort_by(|a, b| b.cmp(a));
+            let result: Vec<_> = paths.iter().skip(0).collect();
+            result
+        }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
     };
 
     //let z: Vec<_> = dupe_files[0].file_paths.iter().filter(|x| true ).collect();
 
-    for file in dupe_files.iter() {
+    for file in dupe_files.iter_mut() {
         //let paths: Vec<_> = file.file_paths.iter().filter(keep_filter).collect();
-        let paths = keep_filter(&file.file_paths);
+        let paths = keep_filter(&mut file.file_paths);
         println!("{0:?}", paths);
     }
 }
