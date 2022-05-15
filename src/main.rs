@@ -30,37 +30,24 @@ fn main(){
             keep_prefixed_file(pathprefix, &mut dupe_files);
         }
         Some(("prefershort", _)) => { 
-            keep_prefixed_file("", &mut dupe_files);
-            // paths.sort_by(|a, b| a.to_str().unwrap().len().cmp(&b.to_str().unwrap().len()));
-            // let result: Vec<_> = paths.iter().skip(1).collect();
-            // result
+            sort_dupes_by_shorter_length(&mut dupe_files);
          }
         Some(("preferlong", _)) => { 
-            keep_prefixed_file("", &mut dupe_files);
-            // paths.sort_by(|a, b| b.to_str().unwrap().len().cmp(&a.to_str().unwrap().len()));
-            // let result: Vec<_> = paths.iter().skip(1).collect();
-            // result
+            sort_dupes_by_longer_length(&mut dupe_files);
          }
         Some(("preferfirstsorted", _))  => { 
-            keep_prefixed_file("", &mut dupe_files);
-            // paths.sort_by(|a, b| b.cmp(a));
-            // let result: Vec<_> = paths.iter().skip(1).collect();
-            // result
+            sort_dupes_alphabetically(&mut dupe_files);
         }
         None => { 
-            keep_prefixed_file("", &mut dupe_files);
-            // paths.sort_by(|a, b| b.cmp(a));
-            // let result: Vec<_> = paths.iter().skip(0).collect();
-            // result
+            // Do nothing special
         }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
     };
 
-    // for file in dupe_files.iter_mut() {
-    //     //let paths: Vec<_> = file.file_paths.iter().filter(keep_filter).collect();
-    //     let paths = keep_filter(&mut file.file_paths);
-    //     println!("{0:?}", paths);
-    // }
+    for file in dupe_files.iter_mut() {
+        let files_to_delete: Vec<_> = file.file_paths.iter().skip(1).collect();
+        println!("For {0:?}, deleting {1:?}", file.file_paths[0], files_to_delete);
+    }
 }
 
 fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>) {
@@ -82,8 +69,27 @@ fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>) {
         });
         println!("{0:?}", file.file_paths);
     }
-    //let result: Vec<_> = paths.iter().skip(1).collect();
-    //result
+}
+
+fn sort_dupes_by_shorter_length(dupe_files: &mut Vec<Fileinfo>) {
+    for file in dupe_files.iter_mut() {
+        file.file_paths.sort_by(|a, b| a.to_str().unwrap().len().cmp(&b.to_str().unwrap().len()));
+        println!("{0:?}", file.file_paths);
+    }
+}
+
+fn sort_dupes_by_longer_length(dupe_files: &mut Vec<Fileinfo>) {
+    for file in dupe_files.iter_mut() {
+        file.file_paths.sort_by(|a, b| b.to_str().unwrap().len().cmp(&a.to_str().unwrap().len()));
+        println!("{0:?}", file.file_paths);
+    }
+}
+
+fn sort_dupes_alphabetically(dupe_files: &mut Vec<Fileinfo>) {
+    for file in dupe_files.iter_mut() {
+        file.file_paths.sort_by(|a, b| a.cmp(&b));
+        println!("{0:?}", file.file_paths);
+    }
 }
 
 fn cli() -> Command<'static> {
@@ -99,6 +105,11 @@ fn cli() -> Command<'static> {
                 .max_values(1)
                 .required(true)
                 .takes_value(true))
+        .arg(Arg::new("dryrun")
+                .short('n')
+                .long("dryrun"))
+                .help("Do dry run (do not delete files, only print what we would do)")
+                .           
         .subcommand(
             Command::new("useprefix")
                 .about("Prefer a path prefix when deciding what file to keep")
