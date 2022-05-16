@@ -22,6 +22,13 @@ enum SortOrder {
     Descending
 }
 
+#[repr(i8)]
+enum PathPrefixDupePreference {
+    None,
+    Short,
+    Long
+}
+
 static DDH_MOVE_RS_ABOUT: &str = "Read DDH JSON files and do something with the data contained in them.";
 
 fn main(){
@@ -33,7 +40,15 @@ fn main(){
     match arguments.subcommand(){
         Some(("useprefix", sub_matches)) => {
             let pathprefix = sub_matches.value_of("PATHPREFIX").expect("required");
-            keep_prefixed_file(pathprefix, &mut dupe_files);
+            let dupe_preference = 
+                if sub_matches.is_present("prefershort") {
+                    PathPrefixDupePreference::Short
+                } else if sub_matches.is_present("preferlong") {
+                    PathPrefixDupePreference::Long
+                } else {
+                    PathPrefixDupePreference::None
+                };
+            keep_prefixed_file(pathprefix, &mut dupe_files, dupe_preference);
         }
         Some(("prefershort", _)) => { 
             sort_dupes_by_shorter_length(&mut dupe_files);
@@ -52,15 +67,22 @@ fn main(){
 
     for file in dupe_files.iter_mut() {
         let files_to_delete: Vec<_> = file.file_paths.iter().skip(1).collect();
+        if arguments.is_present("dryrun") {
+            print!("Dry run: ");
+        }
         println!("For {0:?}, deleting {1:?}", file.file_paths[0], files_to_delete);
     }
 }
 
-fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>) {
+fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference) {
     for file in dupe_files.iter_mut() {
         file.file_paths.sort_by(|a, b| {
             if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
-                a.cmp(b)
+                match dupe_preference {
+                    PathPrefixDupePreference::None => a.cmp(b),
+                    PathPrefixDupePreference::Short => pathbuf_len_sort(a, b, SortOrder::Ascending),
+                    PathPrefixDupePreference::Long => pathbuf_len_sort(a, b, SortOrder::Descending)
+                }
             } else if a.starts_with(pathprefix){
                 Ordering::Less
             } else if b.starts_with(pathprefix){
@@ -151,6 +173,18 @@ fn cli() -> Command<'static> {
                 .about("Prefer a path prefix when deciding what file to keep")
                 .arg(arg!(<PATHPREFIX> "The prefix to prefer"))
                 .arg_required_else_help(true)
+                .arg(Arg::new("prefershort")
+                        .short('s')
+                        .long("prefershort")
+                        .takes_value(false)
+                        .conflicts_with("preferlong")
+                        .help("When dupes are present, prefer the shorter one"))
+                .arg(Arg::new("preferlong")
+                        .short('l')
+                        .long("preferlong")
+                        .takes_value(false)
+                        .conflicts_with("prefershort")
+                        .help("When dupes are present, prefer the longer one"))
         )
         .subcommand(
             Command::new("prefershort")
