@@ -5,6 +5,7 @@ use std::error::Error;
 use std::io::{BufReader};
 use std::{ fmt::Debug};
 use std::{fs::File};
+use std::fs::remove_file;
 use std::path::{Path, PathBuf};
 use std::cmp::Ordering;
 
@@ -65,13 +66,24 @@ fn main(){
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
     };
 
+    let mut deleted_files = Vec::new();
     for file in dupe_files.iter_mut() {
         let files_to_delete: Vec<_> = file.file_paths.iter().skip(1).collect();
         if arguments.is_present("dryrun") {
-            print!("Dry run: ");
+            println!("Dry run: For {0:?}, deleting {1:?}", file.file_paths[0], files_to_delete);
+        } else {
+            for path in files_to_delete {
+                let path_to_delete = path.as_path();
+                match remove_file(path_to_delete) {
+                    Ok(_) => deleted_files.push(path_to_delete),
+                    Err(e) => println!("Error deleting {0:?}: {1:?}", path_to_delete, e)
+                }
+            }
         }
-        println!("For {0:?}, deleting {1:?}", file.file_paths[0], files_to_delete);
     }
+
+    println!("Done!");
+    println!("Successfully deleted: {0:?}", deleted_files);
 }
 
 fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference) {
