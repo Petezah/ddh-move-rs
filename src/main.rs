@@ -5,15 +5,21 @@ use std::error::Error;
 use std::io::{BufReader};
 use std::{ fmt::Debug};
 use std::{fs::File};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::cmp::Ordering;
 
 /// Serializable struct containing entries for a specific file. These structs will identify individual files as a collection of paths and associated hash and length data.
 #[derive(Debug, Deserialize)]
 pub struct Fileinfo {
-    full_hash: Option<u128>,
-    partial_hash: Option<u128>,
+    // full_hash: Option<u128>,
+    // partial_hash: Option<u128>,
     pub(crate) file_paths: Vec<PathBuf>,
+}
+
+#[repr(i8)]
+enum SortOrder {
+    Ascending,
+    Descending
 }
 
 static DDH_MOVE_RS_ABOUT: &str = "Read DDH JSON files and do something with the data contained in them.";
@@ -54,41 +60,71 @@ fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>) {
     for file in dupe_files.iter_mut() {
         file.file_paths.sort_by(|a, b| {
             if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
-                println!("{0:?} {1:?} 1", a, b);
                 a.cmp(b)
             } else if a.starts_with(pathprefix){
-                println!("{0:?} {1:?} 2", a, b);
                 Ordering::Less
             } else if b.starts_with(pathprefix){
-                println!("{0:?} {1:?} 3", a, b);
                 Ordering::Greater
             } else {
-                println!("{0:?} {1:?} 4", a, b);
                 a.cmp(b)
             }
         });
-        println!("{0:?}", file.file_paths);
+    }
+}
+
+fn path_parent_len(path: &Path) -> usize {
+    match path.parent() {
+        Some(parent) => parent.to_str().unwrap().len(),
+        None => 0
+    }
+}
+
+fn path_filename_len(path: &Path) -> usize {
+    match path.file_name() {
+        Some(file_name) => file_name.len(),
+        None => 0
+    }
+}
+
+fn pathbuf_len_sort(a: &PathBuf, b: &PathBuf, sort_order: SortOrder) -> Ordering {
+    // We are intentionally swapping a and b, depending on the sort order
+    let a_path = match sort_order {
+        SortOrder::Ascending => a.as_path(),
+        SortOrder::Descending => b.as_path()
+    };
+    let b_path = match sort_order {
+        SortOrder::Ascending => b.as_path(),
+        SortOrder::Descending => a.as_path()
+    };
+
+    let a_parent_len = path_parent_len(a_path);
+    let b_parent_len = path_parent_len(b_path);
+
+    match a_parent_len.cmp(&b_parent_len) {
+        std::cmp::Ordering::Equal => {
+            let a_file_name_len = path_filename_len(a_path);
+            let b_file_name_len = path_filename_len(b_path);
+            a_file_name_len.cmp(&b_file_name_len)
+        },
+        order => order
     }
 }
 
 fn sort_dupes_by_shorter_length(dupe_files: &mut Vec<Fileinfo>) {
     for file in dupe_files.iter_mut() {
-        file.file_paths.sort_by(|a, b| a.to_str().unwrap().len().cmp(&b.to_str().unwrap().len()));
-        println!("{0:?}", file.file_paths);
+        file.file_paths.sort_by(|a, b| pathbuf_len_sort(a,b,SortOrder::Ascending));
     }
 }
 
 fn sort_dupes_by_longer_length(dupe_files: &mut Vec<Fileinfo>) {
     for file in dupe_files.iter_mut() {
-        file.file_paths.sort_by(|a, b| b.to_str().unwrap().len().cmp(&a.to_str().unwrap().len()));
-        println!("{0:?}", file.file_paths);
+        file.file_paths.sort_by(|a, b| pathbuf_len_sort(a,b,SortOrder::Descending));
     }
 }
 
 fn sort_dupes_alphabetically(dupe_files: &mut Vec<Fileinfo>) {
     for file in dupe_files.iter_mut() {
         file.file_paths.sort_by(|a, b| a.cmp(&b));
-        println!("{0:?}", file.file_paths);
     }
 }
 
@@ -107,9 +143,9 @@ fn cli() -> Command<'static> {
                 .takes_value(true))
         .arg(Arg::new("dryrun")
                 .short('n')
-                .long("dryrun"))
-                .help("Do dry run (do not delete files, only print what we would do)")
-                .           
+                .long("dryrun")
+                .takes_value(false)
+                .help("Do dry run (do not delete files, only print what we would do)"))
         .subcommand(
             Command::new("useprefix")
                 .about("Prefer a path prefix when deciding what file to keep")
