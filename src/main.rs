@@ -100,7 +100,11 @@ fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_pre
             } else if b.starts_with(pathprefix){
                 Ordering::Greater
             } else {
-                a.cmp(b)
+                match dupe_preference {
+                    PathPrefixDupePreference::None => a.cmp(b),
+                    PathPrefixDupePreference::Short => pathbuf_len_sort(a, b, SortOrder::Ascending),
+                    PathPrefixDupePreference::Long => pathbuf_len_sort(a, b, SortOrder::Descending)
+                }
             }
         });
     }
