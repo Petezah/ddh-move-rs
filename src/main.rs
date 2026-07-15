@@ -55,7 +55,20 @@ fn main(){
                 } else {
                     PathPrefixDupePreference::None
                 };
-            keep_prefixed_file(pathprefix, &mut dupe_files, dupe_preference);
+                let blacklist = if sub_matches.is_present("blacklist") {
+                    let vals: Vec<&str> = sub_matches.values_of("blacklist").unwrap().collect();
+                    vals
+                } else { let v: Vec<&str> = Vec::new(); v };
+                println!("Blacklist: {0:?}", blacklist);
+                let whitelist = if sub_matches.is_present("whitelist") {
+                    let vals: Vec<&str> = sub_matches.values_of("whitelist").unwrap().collect();
+                    vals
+                } else { 
+                    let v: Vec<&str> = Vec::new(); 
+                    v 
+                };
+                println!("Whitelist: {0:?}", whitelist);
+            keep_prefixed_file(pathprefix, &mut dupe_files, dupe_preference, whitelist, blacklist);
         }
         Some(("prefershort", _)) => { 
             sort_dupes_by_shorter_length(&mut dupe_files);
@@ -100,7 +113,7 @@ fn main(){
     println!("Successfully deleted: {0:?}", deleted_files);
 }
 
-fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference) {
+fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference, whitelist: Vec<&str>, blacklist: Vec<&str>) {
     for file in dupe_files.iter_mut() {
         file.file_paths.sort_by(|a, b| {
             if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
@@ -224,6 +237,18 @@ fn cli() -> Command<'static> {
                         .takes_value(false)
                         .conflicts_with("prefershort")
                         .help("When dupes are present, prefer the longer one"))
+                .arg(Arg::new("blacklist")
+                        .short('b')
+                        .long("blacklist")
+                        .takes_value(true)
+                        .multiple_occurrences(true)
+                        .help("Never prefer to keep paths containing this string"))
+                .arg(Arg::new("whitelist")
+                        .short('w')
+                        .long("whitelist")
+                        .takes_value(true)
+                        .multiple_occurrences(true)
+                        .help("Always prefer to keep paths containing this string"))
         )
         .subcommand(
             Command::new("prefershort")
