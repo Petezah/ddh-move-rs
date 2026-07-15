@@ -30,6 +30,12 @@ enum PathPrefixDupePreference {
     Long
 }
 
+#[repr(i8)]
+enum PathPrefixAlphaPreference {
+    First,
+    Last
+}
+
 static DDH_MOVE_RS_ABOUT: &str = "Read DDH JSON files and do something with the data contained in them.";
 
 fn main(){
@@ -57,8 +63,16 @@ fn main(){
         Some(("preferlong", _)) => { 
             sort_dupes_by_longer_length(&mut dupe_files);
          }
-        Some(("preferfirstsorted", _))  => { 
-            sort_dupes_alphabetically(&mut dupe_files);
+        Some(("prefersorted", sub_matches))  => { 
+            let dupe_preference = 
+                if sub_matches.is_present("first") {
+                    PathPrefixAlphaPreference::First
+                } else if sub_matches.is_present("last") {
+                    PathPrefixAlphaPreference::Last
+                } else {
+                    PathPrefixAlphaPreference::First
+                };
+            sort_dupes_alphabetically(&mut dupe_files, dupe_preference);
         }
         None => { 
             // Do nothing special
@@ -160,10 +174,19 @@ fn sort_dupes_by_longer_length(dupe_files: &mut Vec<Fileinfo>) {
     }
 }
 
-fn sort_dupes_alphabetically(dupe_files: &mut Vec<Fileinfo>) {
-    for file in dupe_files.iter_mut() {
-        file.file_paths.sort_by(|a, b| a.cmp(&b));
-    }
+fn sort_dupes_alphabetically(dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixAlphaPreference) {
+    match dupe_preference {
+        PathPrefixAlphaPreference::First => {
+            for file in dupe_files.iter_mut() {
+                file.file_paths.sort_by(|a, b| a.cmp(&b));
+            }
+        }
+        PathPrefixAlphaPreference::Last => {
+            for file in dupe_files.iter_mut() {
+                file.file_paths.sort_by(|a, b| b.cmp(&a));
+            }
+        }
+    };
 }
 
 fn cli() -> Command<'static> {
@@ -211,8 +234,20 @@ fn cli() -> Command<'static> {
             .about("Prefer the longest path when deciding what file to keep")
         )
         .subcommand(
-            Command::new("preferfirstsorted")
-            .about("Prefer the first alphabetical path when deciding what file to keep")
+            Command::new("prefersorted")
+            .about("Prefer an alphabetically sorted path when deciding what file to keep")
+                .arg(Arg::new("first")
+                        .short('a')
+                        .long("first")
+                        .takes_value(false)
+                        .conflicts_with("last")
+                        .help("Keep first alphabetical path"))
+                .arg(Arg::new("last")
+                        .short('z')
+                        .long("last")
+                        .takes_value(false)
+                        .conflicts_with("first")
+                        .help("Keep last alphabetical path"))
         )
 }
 
