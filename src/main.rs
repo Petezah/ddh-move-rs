@@ -17,13 +17,6 @@ pub struct Fileinfo {
     pub(crate) file_paths: Vec<PathBuf>,
 }
 
-impl Fileinfo {
-    #[inline]
-    fn from(v: Vec<PathBuf>) -> Fileinfo {
-        Fileinfo { file_paths: v }
-    }
-}
-
 #[repr(i8)]
 enum SortOrder {
     Ascending,
@@ -343,8 +336,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{hint::black_box, path::{self, Path, PathBuf}};
+    use std::{path::{PathBuf}};
     use crate::{Fileinfo, keep_prefixed_file, pathlist_contains_any_path_components, path_contains_component};
+
+    impl Fileinfo {
+    #[inline]
+        fn from(v: Vec<PathBuf>) -> Fileinfo {
+            Fileinfo { file_paths: v }
+        }
+    }
 
     #[test]
     fn fileinfo_ctor_works_correctly() {
