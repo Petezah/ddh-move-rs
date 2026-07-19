@@ -6,7 +6,7 @@ use std::io::{BufReader};
 use std::{ fmt::Debug};
 use std::{fs::File};
 use std::fs::remove_file;
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, Component};
 use std::cmp::Ordering;
 
 /// Serializable struct containing entries for a specific file. These structs will identify individual files as a collection of paths and associated hash and length data.
@@ -15,6 +15,13 @@ pub struct Fileinfo {
     // full_hash: Option<u128>,
     // partial_hash: Option<u128>,
     pub(crate) file_paths: Vec<PathBuf>,
+}
+
+impl Fileinfo {
+    #[inline]
+    fn from(v: Vec<PathBuf>) -> Fileinfo {
+        Fileinfo { file_paths: v }
+    }
 }
 
 #[repr(i8)]
@@ -55,7 +62,20 @@ fn main(){
                 } else {
                     PathPrefixDupePreference::None
                 };
-            keep_prefixed_file(pathprefix, &mut dupe_files, dupe_preference);
+                let blacklist = if sub_matches.is_present("blacklist") {
+                    let vals: Vec<&str> = sub_matches.values_of("blacklist").unwrap().collect();
+                    vals
+                } else { let v: Vec<&str> = Vec::new(); v };
+                println!("Blacklist: {0:?}", blacklist);
+                let whitelist = if sub_matches.is_present("whitelist") {
+                    let vals: Vec<&str> = sub_matches.values_of("whitelist").unwrap().collect();
+                    vals
+                } else { 
+                    let v: Vec<&str> = Vec::new(); 
+                    v 
+                };
+                println!("Whitelist: {0:?}", whitelist);
+            keep_prefixed_file(pathprefix, &mut dupe_files, dupe_preference, whitelist, blacklist);
         }
         Some(("prefershort", _)) => { 
             sort_dupes_by_shorter_length(&mut dupe_files);
@@ -100,10 +120,32 @@ fn main(){
     println!("Successfully deleted: {0:?}", deleted_files);
 }
 
-fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference) {
+fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference, whitelist: Vec<&str>, blacklist: Vec<&str>) {
     for file in dupe_files.iter_mut() {
         file.file_paths.sort_by(|a, b| {
-            if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
+            // Blacklist trumps everything
+            if pathlist_contains_any_path_components(a, &blacklist) && pathlist_contains_any_path_components(b, &blacklist) {
+                match dupe_preference {
+                    PathPrefixDupePreference::None => a.cmp(b),
+                    PathPrefixDupePreference::Short => pathbuf_len_sort(a, b, SortOrder::Ascending),
+                    PathPrefixDupePreference::Long => pathbuf_len_sort(a, b, SortOrder::Descending)
+                }
+            } else if pathlist_contains_any_path_components(b, &blacklist) {
+                Ordering::Less
+            } else if pathlist_contains_any_path_components(a, &blacklist) {
+                Ordering::Greater
+            // Then check whitelist
+            } else if pathlist_contains_any_path_components(a, &whitelist) && pathlist_contains_any_path_components(b, &whitelist) {
+                match dupe_preference {
+                    PathPrefixDupePreference::None => a.cmp(b),
+                    PathPrefixDupePreference::Short => pathbuf_len_sort(a, b, SortOrder::Ascending),
+                    PathPrefixDupePreference::Long => pathbuf_len_sort(a, b, SortOrder::Descending)
+                }
+            } else if pathlist_contains_any_path_components(a, &whitelist) {
+                Ordering::Less
+            } else if pathlist_contains_any_path_components(b, &whitelist) {
+                Ordering::Greater
+            } else if a.starts_with(pathprefix) && b.starts_with(pathprefix) {
                 match dupe_preference {
                     PathPrefixDupePreference::None => a.cmp(b),
                     PathPrefixDupePreference::Short => pathbuf_len_sort(a, b, SortOrder::Ascending),
@@ -122,6 +164,22 @@ fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_pre
             }
         });
     }
+}
+
+fn pathlist_contains_any_path_components(path: &PathBuf, list: &Vec<&str>) -> bool {
+    list.iter().any(|c|{ path_contains_component(&path, c) })
+}
+
+fn path_contains_component(path: &PathBuf, target: &str) -> bool {
+    // Iterate over components and compare as strings
+    path.components().any(|comp| {
+        // Only match normal path components (skip RootDir, CurDir, etc.)
+        if let Component::Normal(os_str) = comp {
+            os_str == target
+        } else {
+            false
+        }
+    })
 }
 
 fn path_parent_len(path: &Path) -> usize {
@@ -224,6 +282,18 @@ fn cli() -> Command<'static> {
                         .takes_value(false)
                         .conflicts_with("prefershort")
                         .help("When dupes are present, prefer the longer one"))
+                .arg(Arg::new("blacklist")
+                        .short('b')
+                        .long("blacklist")
+                        .takes_value(true)
+                        .multiple_occurrences(true)
+                        .help("Never prefer to keep paths containing this string"))
+                .arg(Arg::new("whitelist")
+                        .short('w')
+                        .long("whitelist")
+                        .takes_value(true)
+                        .multiple_occurrences(true)
+                        .help("Always prefer to keep paths containing this string"))
         )
         .subcommand(
             Command::new("prefershort")
@@ -269,4 +339,103 @@ where
     let t: T = serde_json::from_reader(reader)?;
 
     Ok(t)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{hint::black_box, path::{self, Path, PathBuf}};
+    use crate::{Fileinfo, keep_prefixed_file, pathlist_contains_any_path_components, path_contains_component};
+
+    #[test]
+    fn fileinfo_ctor_works_correctly() {
+        let one = "one";
+        let two = "two";
+        let fi = Fileinfo::from(vec![PathBuf::from(one), PathBuf::from(two)]);
+        assert_eq!(fi.file_paths[0].to_str().unwrap(), one);
+        assert_eq!(fi.file_paths[1].to_str().unwrap(), two);
+    }
+
+    #[test]
+    fn path_contains_component_works_correctly() {
+        let test_path = PathBuf::from("foo/bar/bas");
+        assert!(path_contains_component(&test_path, "foo"));
+        assert!(path_contains_component(&test_path, "bar"));
+        assert!(path_contains_component(&test_path, "bas"));
+    }
+
+    #[test]
+    fn pathlist_contains_any_path_components_works_correctly() {
+        let test_path = PathBuf::from("foo/bar/bas");
+
+        let test_vec_1 = vec!["foo"];
+        let test_vec_2 = vec!["blagh", "bar"];
+        let test_vec_3 = vec!["foo", "bar", "bas"];
+        let test_vec_4 = vec!["blagh"];
+
+        assert!(pathlist_contains_any_path_components(&test_path, &test_vec_1));
+        assert!(pathlist_contains_any_path_components(&test_path, &test_vec_2));
+        assert!(pathlist_contains_any_path_components(&test_path, &test_vec_3));
+        assert!(!pathlist_contains_any_path_components(&test_path, &test_vec_4));
+    }
+     
+    #[test]
+    fn paths_matching_pathprefix_are_first() {
+        let path_prefix = "bar/";
+        let dupe_file = Fileinfo::from(
+            vec![
+                PathBuf::from("foo/some-file.txt"), 
+                PathBuf::from("bar/.hidden-folder/some-file2.txt"), 
+                PathBuf::from("bar/some-file.txt"),
+                PathBuf::from("bas/some-file.txt")
+                ]);
+        let mut dupes = vec![dupe_file];
+        let whitelist = vec![];
+        let blacklist: Vec<&str> = vec![];
+
+        keep_prefixed_file(path_prefix, &mut dupes, crate::PathPrefixDupePreference::None, whitelist, blacklist);
+
+        assert!(dupes[0].file_paths[0].starts_with(path_prefix));
+    }
+
+    #[test]
+    fn user_can_blacklist_paths() {
+        let path_prefix = "bar/";
+        let dupe_file = Fileinfo::from(
+            vec![
+                PathBuf::from("foo/some-file.txt"), 
+                PathBuf::from("bar/.hidden-folder/some-file2.txt"), 
+                PathBuf::from("bar/some-file.txt"),
+                PathBuf::from("bas/some-file.txt")
+                ]);
+        let mut dupes = vec![dupe_file];
+        let test_path_component = ".hidden-folder";
+        let whitelist = vec![];
+        let blacklist: Vec<&str> = vec![test_path_component];
+
+        keep_prefixed_file(path_prefix, &mut dupes, crate::PathPrefixDupePreference::None, whitelist, blacklist);
+
+        assert!(!path_contains_component(&dupes[0].file_paths[0], test_path_component));
+    }
+
+    #[test]
+    fn user_can_whitelist_paths() {
+        let path_prefix = "bar/";
+        let dupe_file = Fileinfo::from(
+            vec![
+                PathBuf::from("foo/some-file.txt"), 
+                PathBuf::from("bar/.hidden-folder/some-file2.txt"), 
+                PathBuf::from("bar/1/some-file.txt"),
+                PathBuf::from("bar/2/some-file.txt"),
+                PathBuf::from("bas/some-file.txt")
+                ]);
+        let mut dupes = vec![dupe_file];
+        let test_path_component = "2"; // This path would ordinarily sort after "1"
+        let whitelist = vec![test_path_component];
+        let blacklist: Vec<&str> = vec![];
+
+        keep_prefixed_file(path_prefix, &mut dupes, crate::PathPrefixDupePreference::None, whitelist, blacklist);
+
+        assert!(path_contains_component(&dupes[0].file_paths[0], test_path_component));
+    }
+
 }
