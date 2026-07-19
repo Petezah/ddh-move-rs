@@ -1,0 +1,3 @@
+# Config for Linkstation
+[target.armv5te-unknown-linux-musleabi]
+linker = "/usr/bin/arm-linux-gnueabi-gcc"
