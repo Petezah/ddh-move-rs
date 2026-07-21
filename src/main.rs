@@ -3,9 +3,10 @@ use serde::{ de::DeserializeOwned};
 use serde_derive::Deserialize;
 use std::error::Error;
 use std::io::{BufReader};
+use std::os::unix::fs::MetadataExt;
 use std::{ fmt::Debug};
 use std::{fs::File};
-use std::fs::remove_file;
+use std::fs::{remove_file,metadata};
 use std::path::{Path, PathBuf, Component};
 use std::cmp::Ordering;
 
@@ -97,6 +98,13 @@ fn main(){
     for file in dupe_files.iter_mut() {
         let files_to_delete: Vec<_> = file.file_paths.iter().skip(1).collect();
         if arguments.is_present("dryrun") {
+            let size = files_to_delete.iter().for_each(|f| 
+                let mm = metadata(f.as_path());
+                match metadata(f.as_path()) {
+                    Ok(m) => m.size(),
+                    Err(_) => 0
+                }
+            );
             println!("Dry run: For {0:?}, deleting {1:?}", file.file_paths[0], files_to_delete);
         } else {
             for path in files_to_delete {
