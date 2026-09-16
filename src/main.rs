@@ -3,10 +3,9 @@ use serde::{ de::DeserializeOwned};
 use serde_derive::Deserialize;
 use std::error::Error;
 use std::io::{BufReader};
-use std::os::unix::fs::MetadataExt;
 use std::{ fmt::Debug};
 use std::{fs::File};
-use std::fs::{remove_file,metadata};
+use std::fs::{remove_file, symlink_metadata};
 use std::path::{Path, PathBuf, Component};
 use std::cmp::Ordering;
 
@@ -94,23 +93,32 @@ fn main(){
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
     };
 
+    let dryrun = arguments.is_present("dryrun");
     let mut deleted_files = Vec::new();
-    for file in dupe_files.iter_mut() {
+    let mut total_bytes: u64 = 0;
+    let mut unreadable: usize = 0;
+    let mut dryrun_file_count: usize = 0;
+    for file in dupe_files.iter() {
         let files_to_delete: Vec<_> = file.file_paths.iter().skip(1).collect();
-        if arguments.is_present("dryrun") {
-            let size = files_to_delete.iter().for_each(|f| 
-                let mm = metadata(f.as_path());
-                match metadata(f.as_path()) {
-                    Ok(m) => m.size(),
-                    Err(_) => 0
-                }
-            );
-            println!("Dry run: For {0:?}, deleting {1:?}", file.file_paths[0], files_to_delete);
+        if dryrun {
+            let (group_bytes, group_unreadable) = total_size(&files_to_delete);
+            total_bytes += group_bytes;
+            unreadable += group_unreadable;
+            dryrun_file_count += files_to_delete.len();
+            println!("Dry run: For {0:?}, deleting {1:?} ({2})", file.file_paths[0], files_to_delete, format_bytes(group_bytes));
         } else {
             for path in files_to_delete {
                 let path_to_delete = path.as_path();
+                // Read the size before deleting, but only count it once the delete succeeds.
+                let size = symlink_metadata(path_to_delete).map(|m| m.len());
                 match remove_file(path_to_delete) {
-                    Ok(_) => deleted_files.push(path_to_delete),
+                    Ok(_) => {
+                        match size {
+                            Ok(bytes) => total_bytes += bytes,
+                            Err(_) => unreadable += 1
+                        }
+                        deleted_files.push(path_to_delete)
+                    }
                     Err(e) => println!("Error deleting {0:?}: {1:?}", path_to_delete, e)
                 }
             }
@@ -118,7 +126,15 @@ fn main(){
     }
 
     println!("Done!");
-    println!("Successfully deleted: {0:?}", deleted_files);
+    if dryrun {
+        println!("Dry run: would reclaim {0} across {1} files", format_bytes(total_bytes), dryrun_file_count);
+    } else {
+        println!("Successfully deleted: {0:?}", deleted_files);
+        println!("Reclaimed {0} across {1} files", format_bytes(total_bytes), deleted_files.len());
+    }
+    if unreadable > 0 {
+        println!("Note: could not measure {0} files, so the total above is a lower bound", unreadable);
+    }
 }
 
 fn keep_prefixed_file(pathprefix: &str, dupe_files: &mut Vec<Fileinfo>, dupe_preference: PathPrefixDupePreference, whitelist: Vec<&str>, blacklist: Vec<&str>) {
@@ -194,6 +210,34 @@ fn path_filename_len(path: &Path) -> usize {
     match path.file_name() {
         Some(file_name) => file_name.len(),
         None => 0
+    }
+}
+
+/// Total on-disk size of the given paths, plus a count of the paths whose size could not be read.
+/// Uses symlink_metadata so that symlinks report their own size, which is all that removing them reclaims.
+fn total_size(paths: &[&PathBuf]) -> (u64, usize) {
+    paths.iter().fold((0, 0), |(bytes, unreadable), path|
+        match symlink_metadata(path.as_path()) {
+            Ok(m) => (bytes + m.len(), unreadable),
+            Err(_) => (bytes, unreadable + 1)
+        }
+    )
+}
+
+/// Render a byte count using binary units, e.g. 1536 becomes "1.50 KiB".
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+
+    if unit == 0 {
+        format!("{0} {1}", bytes, UNITS[unit])
+    } else {
+        format!("{0:.2} {1}", value, UNITS[unit])
     }
 }
 
@@ -345,7 +389,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{path::{PathBuf}};
-    use crate::{Fileinfo, keep_prefixed_file, pathlist_contains_any_path_components, path_contains_component};
+    use crate::{Fileinfo, format_bytes, keep_prefixed_file, pathlist_contains_any_path_components, path_contains_component, total_size};
 
     impl Fileinfo {
     #[inline]
@@ -446,4 +490,47 @@ mod tests {
         assert!(path_contains_component(&dupes[0].file_paths[0], test_path_component));
     }
 
+    #[test]
+    fn format_bytes_uses_binary_units() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1024), "1.00 KiB");
+        assert_eq!(format_bytes(1536), "1.50 KiB");
+        assert_eq!(format_bytes(1024 * 1024), "1.00 MiB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GiB");
+    }
+
+    #[test]
+    fn format_bytes_clamps_to_largest_unit() {
+        // u64::MAX is ~16 EiB, well past the largest unit we name, so it must clamp rather than index out of bounds
+        assert!(format_bytes(u64::MAX).ends_with(" PiB"));
+    }
+
+    #[test]
+    fn total_size_of_no_paths_is_zero() {
+        assert_eq!(total_size(&[]), (0, 0));
+    }
+
+    #[test]
+    fn total_size_reports_unreadable_paths() {
+        let missing_1 = PathBuf::from("this/path/does/not/exist");
+        let missing_2 = PathBuf::from("neither/does/this/one");
+
+        assert_eq!(total_size(&[&missing_1, &missing_2]), (0, 2));
+    }
+
+    #[test]
+    fn total_size_measures_real_files() {
+        // Cargo runs tests with the crate root as the working directory, so this committed file is always present
+        let existing = PathBuf::from("test_data.json");
+        let missing = PathBuf::from("this/path/does/not/exist");
+
+        let (bytes, unreadable) = total_size(&[&existing]);
+        assert!(bytes > 0);
+        assert_eq!(unreadable, 0);
+
+        // Adding an unreadable path must not disturb the bytes already counted
+        assert_eq!(total_size(&[&existing, &missing]), (bytes, 1));
+    }
 }
